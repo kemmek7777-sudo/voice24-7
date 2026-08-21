@@ -9,8 +9,8 @@ const client = new Client({
 });
 
 // إعدادات الروم الصوتي والسيرفر
-const CHANNEL_ID = 'ضع_آيدي_الروم_الصوتي_هنا';
-const GUILD_ID = 'ضع_آيدي_السيرفر_هنا';
+const CHANNEL_ID = '1540033851387023410';
+const GUILD_ID = '1320900808195178567';
 
 function connectToVoice() {
     const guild = client.guilds.cache.get(GUILD_ID);
