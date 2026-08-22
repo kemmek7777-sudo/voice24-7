@@ -151,19 +151,20 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ content: '⏳ جاري بدء إرسال الرسائل للأعضاء...', ephemeral: true });
 
-        // جلب جميع أعضاء السيرفر واستبعاد البوتات
-        const members = await interaction.guild.members.fetch();
-        let humanMembers = Array.from(members.filter(m => !m.user.bot).values());
+        // 1. جلب كل الأعضاء وتحويلهم لمصفوفة عادية
+        const fetchedMembers = await interaction.guild.members.fetch();
+        let targetMembers = Array.from(fetchedMembers.values()).filter(m => !m.user.bot);
 
-        // تحديد العدد المطلوبة معالجته
+        // 2. تطبيق تحديد العدد بدقة (إذا حددت 2 سيأخذ أول 2 فقط)
         if (memberCountInput && memberCountInput > 0) {
-            humanMembers = humanMembers.slice(0, memberCountInput);
+            targetMembers = targetMembers.slice(0, memberCountInput);
         }
 
         let successCount = 0;
         let failCount = 0;
 
-        for (const member of humanMembers) {
+        // 3. الإرسال للعدد المحدد فقط
+        for (const member of targetMembers) {
             try {
                 let finalMessage = messageContent;
                 if (tagUser) {
@@ -179,6 +180,22 @@ client.on('interactionCreate', async (interaction) => {
             if (delaySeconds > 0) {
                 await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
             }
+        }
+
+        // 4. التقرير النهائي
+        const summaryEmbed = new EmbedBuilder()
+            .setColor('#57F287')
+            .setTitle('📢 اكتملت عملية الإذاعة (Broadcast)')
+            .addFields(
+                { name: '👥 العدد المستهدف', value: `${targetMembers.length}`, inline: true },
+                { name: '✅ تم الإرسال بنجاح', value: `${successCount}`, inline: true },
+                { name: '❌ فشل الإرسال (خاص مغلق)', value: `${failCount}`, inline: true },
+                { name: '⏱️ التأخير المحدد', value: `${delaySeconds} ثانية`, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+    }
         }
 
         // التقرير النهائي
