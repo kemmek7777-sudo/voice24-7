@@ -34,16 +34,17 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMembers // مطلوب لجلب قائمة الأعضاء للاستدعاء
     ]
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = '1418960523747397755';
 const GUILD_ID = '1320900808195178567';
-const VOICE_CHANNEL_ID = '1540033851387023410';
+const VOICE_CHANNEL_ID = '1540033851387023410'; 
 
-// دالة بث الصمت لمنع ديسكورد من طرد البوت بعد 20 دقيقة
+// بث الصمت لمنع الطرد من الصوت
 class SilenceStream extends Readable {
     _read() { this.push(Buffer.from([0xf8, 0xff, 0xfe])); }
 }
@@ -51,8 +52,10 @@ class SilenceStream extends Readable {
 function connectToVoice() {
     try {
         const guild = client.guilds.cache.get(GUILD_ID);
-        const channel = guild?.channels.cache.get(VOICE_CHANNEL_ID);
-        if (!guild || !channel) return;
+        if (!guild) return console.log('Guild not found!');
+        
+        const channel = guild.channels.cache.get(VOICE_CHANNEL_ID);
+        if (!channel) return console.log('Voice Channel not found!');
 
         const connection = joinVoiceChannel({
             channelId: VOICE_CHANNEL_ID,
@@ -82,25 +85,111 @@ function connectToVoice() {
     }
 }
 
-// تسجيل أمر /setupticket
+// تسجيل الأوامر Slash Commands (يشمل /setupticket و /ak)
 const commands = [
-    new SlashCommandBuilder().setName('setupticket').setDescription('إنشاء لوحة التذاكر المتقدمة')
+    new SlashCommandBuilder()
+        .setName('setupticket')
+        .setDescription('إنشاء لوحة التذاكر المتقدمة'),
+    new SlashCommandBuilder()
+        .setName('ak')
+        .setDescription('إرسال رسالة جماعية لجميع أعضاء السيرفر في الخاص')
+        .addStringOption(option => 
+            option.setName('message')
+                .setDescription('الرسالة المراد إرسالها للأعضاء')
+                .setRequired(true))
+        .addBooleanOption(option => 
+            option.setName('tag_user')
+                .setDescription('هل تريد إدراج تاغ/منشن للمستخدم في بداية الرسالة؟ (true / false)')
+                .setRequired(true))
+        .addIntegerOption(option => 
+            option.setName('delay')
+                .setDescription('المدة الزمنية بين كل رسالة ورسالة بالثواني (مثال: 2)')
+                .setRequired(false))
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
-    connectToVoice(); // دخول الروم الصوتي فور تشغيل البوت
+    
+    setTimeout(() => {
+        connectToVoice();
+    }, 2000);
+
     try {
         await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+        console.log('تم تسجيل الأوامر بنجاح!');
     } catch (e) { console.error(e); }
 });
 
-// التعامل مع الأوامر والتذاكر
+// الاستجابة عند الإشارة (Mention) للبوت
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    if (message.mentions.has(client.user) && !message.mentions.everyone) {
+        await message.reply('Hello, how can I help you?\nمرحبا كيف اساعدك ؟');
+    }
+});
+
+// التعامل مع الأوامر والتفاعلات
 client.on('interactionCreate', async (interaction) => {
-    
-    // 1. أمر /setupticket
+
+    // --- أمر الإذاعة الجماعية /ak ---
+    if (interaction.isChatInputCommand() && interaction.commandName === 'ak') {
+        // التحقق من صلاحية الإدارة للحدث
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: '❌ هذا الأمر مخصص للإداريين فقط!', ephemeral: true });
+        }
+
+        const messageContent = interaction.options.getString('message');
+        const tagUser = interaction.options.getBoolean('tag_user');
+        const delaySeconds = interaction.options.getInteger('delay') || 1; // التأخير الافتراضي 1 ثانية
+
+        await interaction.reply({ content: '⏳ جاري بدء إرسال الرسائل للأعضاء...', ephemeral: true });
+
+        // جلب جميع أعضاء السيرفر
+        const members = await interaction.guild.members.fetch();
+        const humanMembers = members.filter(m => !m.user.bot); // استبعاد البوتات
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const [id, member] of humanMembers) {
+            try {
+                let finalMessage = messageContent;
+                if (tagUser) {
+                    finalMessage = `${member} ${messageContent}`;
+                }
+
+                await member.send(finalMessage);
+                successCount++;
+            } catch (error) {
+                // فشل الإرسال (مثلاً الخاص مغلق لدى العضو)
+                failCount++;
+            }
+
+            // الانتظار بين الرسائل لتجنب الحظر (Rate Limit)
+            if (delaySeconds > 0) {
+                await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+            }
+        }
+
+        // إرسال التقرير النهائي للآدمن
+        const summaryEmbed = new EmbedBuilder()
+            .setColor('#57F287')
+            .setTitle('📢 اكتملت عملية الإذاعة (Broadcast)')
+            .addFields(
+                { name: '👥 إجمالي الأعضاء', value: `${humanMembers.size}`, inline: true },
+                { name: '✅ تم الإرسال بنجاح', value: `${successCount}`, inline: true },
+                { name: '❌ فشل الإرسال (خاص مغلق)', value: `${failCount}`, inline: true },
+                { name: '⏱️ التأخير المحدد', value: `${delaySeconds} ثانية`, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+    }
+
+    // --- أمر /setupticket ---
     if (interaction.isChatInputCommand() && interaction.commandName === 'setupticket') {
         const ticketEmbed = new EmbedBuilder()
             .setColor('#1E1F22')
@@ -123,7 +212,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: 'تم إنشاء لوحة التذاكر بنجاح!', ephemeral: true });
     }
 
-    // 2. ضغط زر فتح تذكرة
+    // باقي أحداث التذاكر...
     if (interaction.isButton() && interaction.customId.startsWith('t_')) {
         const guild = interaction.guild;
         const user = interaction.user;
@@ -156,7 +245,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: `تم فتح تذكرتك: ${ticketChannel}`, ephemeral: true });
     }
 
-    // 3. استلام التذكرة (Claim)
     if (interaction.isButton() && interaction.customId === 'claim_ticket') {
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
             return interaction.reply({ content: 'هذا الزر مخصص للإدارة فقط!', ephemeral: true });
@@ -175,7 +263,6 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.message.edit({ components: [disabledRow] });
     }
 
-    // 4. إظهار قائمة خيارات الإغلاق
     if (interaction.isButton() && interaction.customId === 'close_menu') {
         const selectMenu = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -192,7 +279,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: 'حدد سبب إغلاق التذكرة:', components: [selectMenu], ephemeral: true });
     }
 
-    // 5. معالجة الإغلاق وإرسال الرسالة في الخاص (DM)
     if (interaction.isStringSelectMenu() && interaction.customId === 'close_options') {
         const reason = interaction.values[0];
         if (reason === 'cancel') {
@@ -221,16 +307,6 @@ client.on('interactionCreate', async (interaction) => {
         setTimeout(() => {
             interaction.channel.delete().catch(() => {});
         }, 3000);
-    }
-});
-// الاستجابة عند الإشارة (Mention) للبوت
-client.on('messageCreate', async (message) => {
-    // التاكد من أن المنشئ ليس بوتاً
-    if (message.author.bot) return;
-
-    // التحقق مما إذا كانت الرسالة تحتوي على تاغ للبوت فقط
-    if (message.mentions.has(client.user) && !message.mentions.everyone) {
-        await message.reply('Hello, how can I help you?\nمرحبا كيف اساعدك ؟');
     }
 });
 
