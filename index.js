@@ -85,25 +85,29 @@ function connectToVoice() {
     }
 }
 
-// تسجيل الأوامر Slash Commands (يشمل /setupticket و /ak)
+// تسجيل الأوامر Slash Commands (يشمل /setupticket و /ak المطور)
 const commands = [
     new SlashCommandBuilder()
         .setName('setupticket')
         .setDescription('إنشاء لوحة التذاكر المتقدمة'),
     new SlashCommandBuilder()
         .setName('ak')
-        .setDescription('إرسال رسالة جماعية لجميع أعضاء السيرفر في الخاص')
+        .setDescription('إرسال رسالة جماعية للأعضاء في الخاص')
         .addStringOption(option => 
             option.setName('message')
                 .setDescription('الرسالة المراد إرسالها للأعضاء')
                 .setRequired(true))
         .addBooleanOption(option => 
             option.setName('tag_user')
-                .setDescription('هل تريد إدراج تاغ/منشن للمستخدم في بداية الرسالة؟ (true / false)')
+                .setDescription('هل تريد إدراج تاغ/منشن للمستخدم؟ (true / false)')
                 .setRequired(true))
         .addIntegerOption(option => 
+            option.setName('member_count')
+                .setDescription('عدد الأعضاء المراد الإرسال لهم (مثال: 50)')
+                .setRequired(false))
+        .addIntegerOption(option => 
             option.setName('delay')
-                .setDescription('المدة الزمنية بين كل رسالة ورسالة بالثواني (مثال: 2)')
+                .setDescription('المدة الزمنية بين كل رسالة بالثواني (مثال: 2)')
                 .setRequired(false))
 ].map(c => c.toJSON());
 
