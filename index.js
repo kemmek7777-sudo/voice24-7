@@ -223,5 +223,15 @@ client.on('interactionCreate', async (interaction) => {
         }, 3000);
     }
 });
+// الاستجابة عند الإشارة (Mention) للبوت
+client.on('messageCreate', async (message) => {
+    // التاكد من أن المنشئ ليس بوتاً
+    if (message.author.bot) return;
+
+    // التحقق مما إذا كانت الرسالة تحتوي على تاغ للبوت فقط
+    if (message.mentions.has(client.user) && !message.mentions.everyone) {
+        await message.reply('Hello, how can I help you?\nمرحبا كيف اساعدك ؟');
+    }
+});
 
 client.login(TOKEN);
