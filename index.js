@@ -138,27 +138,32 @@ client.on('messageCreate', async (message) => {
 // التعامل مع الأوامر والتفاعلات
 client.on('interactionCreate', async (interaction) => {
 
-    // --- أمر الإذاعة الجماعية /ak ---
+// --- أمر الإذاعة الجماعية /ak ---
     if (interaction.isChatInputCommand() && interaction.commandName === 'ak') {
-        // التحقق من صلاحية الإدارة للحدث
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return interaction.reply({ content: '❌ هذا الأمر مخصص للإداريين فقط!', ephemeral: true });
         }
 
         const messageContent = interaction.options.getString('message');
         const tagUser = interaction.options.getBoolean('tag_user');
-        const delaySeconds = interaction.options.getInteger('delay') || 1; // التأخير الافتراضي 1 ثانية
+        const memberCountInput = interaction.options.getInteger('member_count');
+        const delaySeconds = interaction.options.getInteger('delay') || 1;
 
         await interaction.reply({ content: '⏳ جاري بدء إرسال الرسائل للأعضاء...', ephemeral: true });
 
-        // جلب جميع أعضاء السيرفر
+        // جلب جميع أعضاء السيرفر واستبعاد البوتات
         const members = await interaction.guild.members.fetch();
-        const humanMembers = members.filter(m => !m.user.bot); // استبعاد البوتات
+        let humanMembers = Array.from(members.filter(m => !m.user.bot).values());
+
+        // تحديد العدد المطلوبة معالجته
+        if (memberCountInput && memberCountInput > 0) {
+            humanMembers = humanMembers.slice(0, memberCountInput);
+        }
 
         let successCount = 0;
         let failCount = 0;
 
-        for (const [id, member] of humanMembers) {
+        for (const member of humanMembers) {
             try {
                 let finalMessage = messageContent;
                 if (tagUser) {
@@ -168,14 +173,28 @@ client.on('interactionCreate', async (interaction) => {
                 await member.send(finalMessage);
                 successCount++;
             } catch (error) {
-                // فشل الإرسال (مثلاً الخاص مغلق لدى العضو)
                 failCount++;
             }
 
-            // الانتظار بين الرسائل لتجنب الحظر (Rate Limit)
             if (delaySeconds > 0) {
                 await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
             }
+        }
+
+        // التقرير النهائي
+        const summaryEmbed = new EmbedBuilder()
+            .setColor('#57F287')
+            .setTitle('📢 اكتملت عملية الإذاعة (Broadcast)')
+            .addFields(
+                { name: '👥 العدد المستهدف', value: `${humanMembers.length}`, inline: true },
+                { name: '✅ تم الإرسال بنجاح', value: `${successCount}`, inline: true },
+                { name: '❌ فشل الإرسال (خاص مغلق)', value: `${failCount}`, inline: true },
+                { name: '⏱️ التأخير المحدد', value: `${delaySeconds} ثانية`, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+    }
         }
 
         // إرسال التقرير النهائي للآدمن
